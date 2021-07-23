@@ -1,0 +1,29 @@
+[package]
+name = "redis-stream"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+tokio = { version = "1.8", features = ["macros", "rt-multi-thread"] }
+async-std = { version = "1", features = ["unstable"] }
+structopt = { version = "0.3", default-features = false }
+redis = { version = "0.21", features = [
+    "tokio-comp",
+    "async-std-comp",
+    "streams",
+    "r2d2",
+    "connection-manager",
+] }
+async-trait = "0.1.50"
+thiserror = "1.0.26"
+serde = { version = "1.0", features = ["derive"] }
+mockall = "0.10"
+futures = "0.3"
+futures-util = "0.3"
+log = "0.4"
+
+
+[dev-dependencies]
+rand = "0.8"
+socket2 = "0.3"
+tempfile = "3.2"
