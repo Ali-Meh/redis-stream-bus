@@ -1,6 +1,6 @@
 use super::error::Result;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::{Receiver};
+use tokio::sync::mpsc::Receiver;
 
 #[cfg(test)]
 use mockall::*;
@@ -27,7 +27,7 @@ pub struct Stream {
     pub value: StreamValue,
 }
 // #[cfg_attr(test, automock)] TODO: how to mock??
-pub trait StreamBusClient {
+pub trait StreamBus: Sync + Send + 'static {
     fn ack(&mut self, stream: &Stream) -> Result<()>;
     fn add(&mut self, stream: &Stream) -> Result<StreamID>;
     fn read(&mut self, keys: &Vec<&str>) -> Result<Receiver<Stream>>;

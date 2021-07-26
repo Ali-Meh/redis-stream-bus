@@ -1,6 +1,6 @@
 use super::config::Config;
 pub use super::error::{Error, Result};
-pub use super::provider::{Stream, StreamBusClient, StreamID, StreamKey};
+pub use super::bus::{Stream, StreamBus, StreamID, StreamKey};
 use async_scoped;
 use log::*;
 use redis::streams::{StreamReadOptions, StreamReadReply};
@@ -58,7 +58,7 @@ impl RedisClient {
     }
 }
 
-impl<'a> StreamBusClient for RedisClient {
+impl<'a> StreamBus for RedisClient {
     fn ack(&mut self, stream: &Stream) -> Result<()> {
         match &stream.id {
             Some(id) => {

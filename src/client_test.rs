@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::server::RedisServer;
-    use crate::{client::*, provider::*};
+    use crate::{client::*, bus::*};
     use simple_logger::SimpleLogger;
 
     #[tokio::test]
