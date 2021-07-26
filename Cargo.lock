@@ -878,10 +878,6 @@ name = "redis-stream-client"
 version = "0.1.0"
 dependencies = [
  "async-scoped",
- "async-trait",
- "futures",
- "futures-core",
- "futures-util",
  "log",
  "mockall",
  "redis",

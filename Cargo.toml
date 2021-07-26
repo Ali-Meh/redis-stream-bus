@@ -14,13 +14,9 @@ redis = { version = "0.21", features = [
 thiserror = "1.0.26"
 serde = { version = "1.0", features = ["derive"] }
 mockall = "0.10"
-futures = { version = "0.3.3" }
 log = "0.4"
 serde_json = "1.0"
-async-trait = "0.1"
 tokio-stream = "0.1"
-futures-util = "0.3"
-futures-core = "0.3.16"
 async-scoped = { version = "0.7.0", features = ["use-async-std"] }
 
 [dev-dependencies]
