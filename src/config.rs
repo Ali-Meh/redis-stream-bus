@@ -1,6 +1,7 @@
 use structopt::StructOpt;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, StructOpt, Clone)]
+#[derive(Debug, StructOpt, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[structopt(long = "redis-connection-string", env = "REDIS_CONNECTION_STRING")]
     pub connection_string: String,

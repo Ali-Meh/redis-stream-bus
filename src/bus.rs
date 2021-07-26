@@ -10,7 +10,7 @@ pub type StreamKey = String;
 
 ///
 /// EventValue is the data structure passed to event handler
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamValue {
     /// identifier of the sender module
     pub module: String,
@@ -20,7 +20,7 @@ pub struct StreamValue {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stream {
     pub id: Option<StreamID>,
     pub key: StreamKey,
