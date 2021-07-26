@@ -1,7 +1,9 @@
+use super::error::Result;
+use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::{Receiver};
+
 #[cfg(test)]
 use mockall::*;
-use serde::{Deserialize, Serialize};
-use async_std::channel::{Receiver, Sender};
 
 pub type StreamID = String;
 pub type StreamKey = String;
@@ -25,17 +27,8 @@ pub struct Stream {
     pub value: StreamValue,
 }
 // #[cfg_attr(test, automock)] TODO: how to mock??
-
 pub trait StreamBusClient {
-    fn read_receiver(&self) -> Receiver<Stream>;
-    fn add_transmitter(&self) -> Sender<Stream>;
-
-    fn run(self);
-
-    // / TODO: this should be a channel
-    // /
-    // / `ack_event` will notify redis of done processing event and redis can remove it from pending queue
-    // /
-    // / needs to be run after `process_events` on processed event
-    // async fn ack_event(&self, stream_key: StreamKey, stream_id: StreamID);
+    fn ack(&mut self, stream: &Stream) -> Result<()>;
+    fn add(&mut self, stream: &Stream) -> Result<StreamID>;
+    fn read(&mut self, keys: &Vec<&str>) -> Result<Receiver<Stream>>;
 }

@@ -1,13 +1,12 @@
+use super::config::Config;
+pub use super::error::{Error, Result};
 pub use super::provider::{Stream, StreamBusClient, StreamID, StreamKey};
-use async_std::channel::{Receiver, Sender};
-use async_trait::async_trait;
-use futures::{future::FutureExt, select};
-use futures_util::stream::StreamExt;
+use async_scoped;
 use log::*;
-use redis::streams::{StreamReadOptions};
-use redis::{AsyncCommands, RedisFuture, RedisResult};
-use std::collections::{BTreeMap};
-use std::{ usize};
+use redis::streams::{StreamReadOptions, StreamReadReply};
+use redis::{AsyncCommands, Commands, RedisResult, Value};
+use std::usize;
+use tokio::sync::mpsc::Receiver;
 
 /// **RedisClient** will keep connection and internal options of redis client
 ///
@@ -20,10 +19,8 @@ use std::{ usize};
 /// - `count`: maximum events per request
 ///
 pub struct RedisClient {
-    keys: Vec<StreamKey>,
-    add_ch: (Sender<Stream>, Receiver<Stream>),
-    read_ch: (Sender<Stream>, Receiver<Stream>),
     client: redis::Client,
+    connection: redis::Connection,
     group_name: Option<String>,
     consumer_name: Option<String>,
     timeout: usize,
@@ -31,18 +28,17 @@ pub struct RedisClient {
 }
 
 impl RedisClient {
-    pub fn new(connection_string: &str) -> Self {
-        let client = redis::Client::open(connection_string).unwrap();
-        RedisClient {
-            keys: Vec::new(),
-            add_ch: async_std::channel::unbounded(),
-            read_ch: async_std::channel::unbounded(),
-            client: client,
+    pub fn new(connection_string: &str) -> RedisResult<Self> {
+        let client = redis::Client::open(connection_string)?;
+        let connection = client.get_connection()?;
+        Ok(RedisClient {
+            client,
+            connection,
             group_name: None,
             consumer_name: None,
             timeout: 5_000,
             count: 5,
-        }
+        })
     }
 
     pub fn with_group_name(mut self, group_name: &str) -> Self {
@@ -54,96 +50,95 @@ impl RedisClient {
         self.consumer_name = Some(consumer_name.to_owned());
         self
     }
+
+    pub fn from_config(config: &Config) -> RedisResult<Self> {
+        Ok(Self::new(&config.connection_string)?
+            .with_consumer_name(&config.consumer_name)
+            .with_group_name(&config.group_name))
+    }
 }
 
-#[async_trait]
-impl StreamBusClient for RedisClient {
-    fn read_receiver(&self) -> Receiver<Stream> {
-        self.read_ch.1.clone()
-    }
-    fn add_transmitter(&self) -> Sender<Stream> {
-        self.add_ch.0.clone()
-    }
+impl<'a> StreamBusClient for RedisClient {
+    fn ack(&mut self, stream: &Stream) -> Result<()> {
+        match &stream.id {
+            Some(id) => {
+                let res: RedisResult<String> =
+                    self.connection.xack(&stream.key, &self.group_name, &[id]);
 
-    fn run(mut self) {
-        tokio::spawn(async move {
-            let mut ids = vec![];
-            for k in self.keys {
-                //     let created: RedisResult<()> =
-                //         con.xgroup_create_mkstream(*k, &self.group_name, id).await;
-                //     if let Err(e) = created {
-                //         debug!("Group already exists: {:?} \n", e);
-                //     }
-                ids.push(">");
-            }
-
-            loop {
-                let mut con1 = self.client.get_tokio_connection().await.unwrap();
-                let mut con2 = self.client.get_tokio_connection().await.unwrap();
-
-                let opts = StreamReadOptions::default()
-                    .block(self.timeout)
-                    .count(self.count)
-                    .group(&self.group_name, &self.consumer_name);
-
-                let xread_fut: RedisFuture<String> = con1.xread_options(&[&""], &ids, &opts);
-                let mut read_fuse = xread_fut.fuse();
-
-                select! {
-                    a = read_fuse => {}
-
-                            read_data = self.add_ch.1.next() => match read_data{
-                        Some(data) => {
-                            println!("data {:?}", data);
-                            let map:BTreeMap<String,String>=BTreeMap::new();
-                            let id: RedisResult<String> = con2.xadd_map(
-                                0, // maxlen,
-                                "*",
-                                map,
-                            ).await;
-                        }
-                        None =>{
-
-                        }
-                    }
+                match res {
+                    Ok(id) => debug!("Stream acknowledged: {:?}", id),
+                    Err(err) => error!("An error occurred on acknowledgment: {}", err),
                 }
             }
+            None => {
+                error!("Stream ID is not set for acknowledgment: {:?}", stream);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn add(&mut self, stream: &Stream) -> Result<StreamID> {
+        let json = serde_json::to_string(&stream.value).unwrap();
+        let id: String = self
+            .connection
+            .xadd(stream.key.clone(), "*", &[("value", json)])?;
+
+        debug!("Stream added: {:?}", stream);
+        Ok(id)
+    }
+
+    fn read(&mut self, keys: &Vec<&str>) -> Result<Receiver<Stream>> {
+        let (read_tx, read_rx) = tokio::sync::mpsc::channel(100);
+        let opts =
+            StreamReadOptions::default().group(self.group_name.clone(), self.consumer_name.clone());
+
+        async_scoped::AsyncScope::scope_and_block(|s| {
+            let proc = || async {
+                let mut con = self.client.get_async_connection().await.unwrap();
+                let mut ids = vec![];
+                for k in keys {
+                    let created: RedisResult<()> =
+                        con.xgroup_create_mkstream(k, &self.group_name, "$").await;
+                    if let Err(e) = created {
+                        debug!("Group already exists: {:?} \n", e);
+                    }
+                    ids.push(">");
+                }
+
+                let stream_option: Option<StreamReadReply> =
+                    con.xread_options(&keys, &ids, &opts).await.unwrap(); // TODO: error handling
+
+                match stream_option {
+                    Some(reply) => {
+                        for key in reply.keys {
+                            for id in key.ids {
+                                let value = id.map.get("value").unwrap(); // TODO:: Error handling + test
+                                match value {
+                                    Value::Data(val) => {
+                                        let stream = Stream {
+                                            id: Some(id.id),
+                                            key: key.key.clone(),
+                                            value: serde_json::from_slice(&val.to_vec()).unwrap(),
+                                        };
+
+                                        read_tx.send(stream).await.unwrap();
+                                    }
+                                    _ => {
+                                        // TODO
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        debug!("Stream option is empty");
+                    }
+                }
+            };
+            s.spawn(proc());
         });
 
-        // loop {
-        //     select! {
-        //         read_data = read_fuse.next() => match read_data{
-        //             Some(data) => {
-        //                 let msg = data;
-        //                 self.read_ch.0.send(msg);
-        //             }
-        //             None =>{
-        //                 debug!("invalid stream data")
-        //             }
-        //         },
-
-        //         read_data = self.add_ch.1.next() => match read_data{
-        //             Some(data) => {
-        //                 let map:BTreeMap<String,String>=BTreeMap::new();
-        //                 let id: RedisResult<String> = con.xadd_map(
-        //                     0, // maxlen,
-        //                     "*",
-        //                     map,
-        //                 ).await;
-        //             }
-        //             None =>{
-
-        //             }
-
-        //         },
-        //     }
+        Ok(read_rx)
     }
 }
-// }
-
-// // futures_util::future::Fuse<Pin<Box<dyn futures_util::Future<Output = std::result::Result<std::string::String, RedisError>> + std::marker::Send>>>
-// // futures_util::future::Fuse<Pin<Box<dyn futures_util::Future<Output = std::result::Result<std::string::String, RedisError>> + std::marker::Send>>>
-// the method `next` exists for struct `futures_util::future::Fuse<Pin<Box<dyn futures_util::Future<Output = std::result::Result<std::string::String, RedisError>> + std::marker::Send>>>`, but its trait bounds were not satisfied
-// the following trait bounds were not satisfied:
-// `futures_util::future::Fuse<Pin<Box<dyn futures_util::Future<Output = std::result::Result<std::string::String, RedisError>> + std::marker::Send>>>: futures_util::Stream`
-// which is required by `futures_util::future::Fuse<Pin<Box<dyn futures_util::Future<Output = std::result::Result<std::string::String, RedisError>> + std::marker::Send>>>: futures_util::StreamExt`rustcE0599
