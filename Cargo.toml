@@ -1,5 +1,5 @@
 [package]
-name = "redis-stream"
+name = "redis-stream-client"
 version = "0.1.0"
 edition = "2018"
 
