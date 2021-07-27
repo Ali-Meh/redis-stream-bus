@@ -6,6 +6,7 @@ pub use super::bus::{Stream, StreamBus, StreamID, StreamKey};
 use log::*;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::{AsyncCommands, Commands, RedisResult, Value};
+use std::collections::HashMap;
 use std::usize;
 use tokio::sync::mpsc::Receiver;
 
@@ -44,6 +45,16 @@ impl RedisClient {
 
     pub fn with_group_name(mut self, group_name: &str) -> Self {
         self.group_name = Some(group_name.to_owned());
+        self
+    }
+
+    pub fn with_timeout(mut self, timeout: usize) -> Self {
+        self.timeout = timeout;
+        self
+    }
+    
+    pub fn with_count(mut self, count: usize) -> Self {
+        self.count = count;
         self
     }
 
@@ -96,7 +107,7 @@ impl<'a> StreamBus for RedisClient {
             .group(self.group_name.clone(), self.consumer_name.clone())
             .block(self.timeout)
             .count(self.count);
-            
+
             let mut con = self.client.get_connection()?;
             let mut ids = vec![];
             for k in keys {
@@ -125,13 +136,13 @@ impl<'a> StreamBus for RedisClient {
                                         let stream = Stream {
                                             id: Some(id.id),
                                             key: key.key.clone(),
-                                            value: serde_json::from_slice(&val.to_vec()).unwrap(),
+                                            value: decode_value(value),
                                         };
                                         println!("[+] Got event {:?}",stream);
                                         read_tx.send(stream).await.unwrap();
                                     }
                                     _ => {
-                                        warn!("unimplmented Deserilization");
+                                        warn!("unimplmented Deserilization {:?}",value);
                                         // TODO
                                     }
                                 }
@@ -147,4 +158,10 @@ impl<'a> StreamBus for RedisClient {
 
         Ok(read_rx)
     }
+}
+
+
+fn decode_value(v:&Value) -> StreamValue{
+    let map:HashMap<String,String>=redis::from_redis_value(v).unwrap();
+    map.into()
 }

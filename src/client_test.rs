@@ -8,9 +8,9 @@ mod tests {
     async fn test_read_and_add() {
         SimpleLogger::new().init().unwrap();
 
-        let server = RedisServer::new("127.0.0.1".to_owned(), "6379".to_owned());
+        // let server = RedisServer::new("127.0.0.1".to_owned(), "6379".to_owned());
 
-        let mut client = RedisClient::new(server.get_client_addr())
+        let mut client = RedisClient::new("localhost:6379")
             .unwrap()
             .with_consumer_name("consumer_1")
             .with_group_name("group_1");
