@@ -1,10 +1,10 @@
+pub use super::bus::{Stream, StreamBus, StreamID, StreamKey};
 use super::config::Config;
 pub use super::error::{Error, Result};
-pub use super::bus::{Stream, StreamBus, StreamID, StreamKey};
-use async_scoped;
 use log::*;
 use redis::streams::{StreamReadOptions, StreamReadReply};
-use redis::{AsyncCommands, Commands, RedisResult, Value};
+use redis::{Commands, RedisResult};
+use std::collections::{BTreeMap};
 use std::usize;
 use tokio::sync::mpsc::Receiver;
 
@@ -46,6 +46,16 @@ impl RedisClient {
         self
     }
 
+    pub fn with_timeout(mut self, timeout: usize) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn with_count(mut self, count: usize) -> Self {
+        self.count = count;
+        self
+    }
+
     pub fn with_consumer_name(mut self, consumer_name: &str) -> Self {
         self.consumer_name = Some(consumer_name.to_owned());
         self
@@ -79,55 +89,52 @@ impl<'a> StreamBus for RedisClient {
     }
 
     fn add(&mut self, stream: &Stream) -> Result<StreamID> {
-        let json = serde_json::to_string(&stream.value).unwrap();
         let id: String = self
             .connection
-            .xadd(stream.key.clone(), "*", &[("value", json)])?;
+            .xadd_map::<_, _, BTreeMap<String, String>, _>(
+                stream.key.clone(),
+                "*",
+                stream.value.clone().into(),
+            )?;
 
         debug!("Stream added: {:?}", stream);
         Ok(id)
     }
 
-    fn read(&mut self, keys: &Vec<&str>) -> Result<Receiver<Stream>> {
+    fn read(&mut self, keys: &Vec<String>) -> Result<Receiver<Stream>> {
         let (read_tx, read_rx) = tokio::sync::mpsc::channel(100);
-        let opts =
-            StreamReadOptions::default().group(self.group_name.clone(), self.consumer_name.clone());
+        let opts = StreamReadOptions::default()
+            .group(self.group_name.clone(), self.consumer_name.clone())
+            .block(self.timeout)
+            .count(self.count);
 
-        async_scoped::AsyncScope::scope_and_block(|s| {
-            let proc = || async {
-                let mut con = self.client.get_async_connection().await.unwrap();
-                let mut ids = vec![];
-                for k in keys {
-                    let created: RedisResult<()> =
-                        con.xgroup_create_mkstream(k, &self.group_name, "$").await;
-                    if let Err(e) = created {
-                        debug!("Group already exists: {:?} \n", e);
-                    }
-                    ids.push(">");
-                }
+        let mut con = self.client.get_connection()?;
+        let mut ids = vec![];
+        for k in keys {
+            let created: RedisResult<()> = con.xgroup_create_mkstream(k, &self.group_name, "$");
+            if let Err(e) = created {
+                log::warn!("Group already exists: {:?} \n", e);
+            }
+            ids.push(">");
+        }
+        let keyss = keys.to_owned();
 
+        tokio::spawn(async move {
+            loop {
                 let stream_option: Option<StreamReadReply> =
-                    con.xread_options(&keys, &ids, &opts).await.unwrap(); // TODO: error handling
+                    con.xread_options(&keyss, &ids, &opts).unwrap(); // TODO: error handling
 
                 match stream_option {
                     Some(reply) => {
                         for key in reply.keys {
-                            for id in key.ids {
-                                let value = id.map.get("value").unwrap(); // TODO:: Error handling + test
-                                match value {
-                                    Value::Data(val) => {
-                                        let stream = Stream {
-                                            id: Some(id.id),
-                                            key: key.key.clone(),
-                                            value: serde_json::from_slice(&val.to_vec()).unwrap(),
-                                        };
-
-                                        read_tx.send(stream).await.unwrap();
-                                    }
-                                    _ => {
-                                        // TODO
-                                    }
-                                }
+                            for stream_id in key.ids {
+                                let stream = Stream {
+                                    id: Some(stream_id.id),
+                                    key: key.key.clone(),
+                                    value: stream_id.map.into(),
+                                };
+                                log::info!("[+] Got event {:?}", stream);
+                                read_tx.send(stream).await.unwrap();
                             }
                         }
                     }
@@ -135,8 +142,7 @@ impl<'a> StreamBus for RedisClient {
                         debug!("Stream option is empty");
                     }
                 }
-            };
-            s.spawn(proc());
+            }
         });
 
         Ok(read_rx)
