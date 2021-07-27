@@ -51,22 +51,23 @@ impl From<StreamValue> for BTreeMap<String, String> {
     }
 }
 
-impl From<HashMap<String, String>> for StreamValue {
-    fn from(map: HashMap<String, String>) -> Self {
-        let request_id = map.get("request_id").unwrap();
-        let request_id = if "" == request_id {
+impl From<HashMap<String, redis::Value>> for StreamValue {
+    fn from(map: HashMap<String, redis::Value>) -> Self {
+        let request_id = parse_to_string(map.get("request_id"));
+        let request_id = if "".to_string() == request_id {
             None
         } else {
-            Some(request_id.to_string())
+            Some(request_id)
         };
 
         StreamValue {
-            module: map.get("module").unwrap().to_string(),
+            module: parse_to_string(map.get("module")),
             request_id,
-            message: map.get("message").unwrap().to_string(),
+            message: parse_to_string(map.get("message")),
         }
     }
 }
+
 
 pub fn parse_to_string(from: Option<&redis::Value>) -> String {
     if let Some(v) = from {

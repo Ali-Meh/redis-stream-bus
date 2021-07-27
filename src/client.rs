@@ -5,7 +5,7 @@ pub use super::error::{Error, Result};
 pub use super::bus::{Stream, StreamBus, StreamID, StreamKey};
 use log::*;
 use redis::streams::{StreamReadOptions, StreamReadReply};
-use redis::{AsyncCommands, Commands, RedisResult, Value};
+use redis::{Commands, RedisResult, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::usize;
 use tokio::sync::mpsc::Receiver;
@@ -128,24 +128,14 @@ impl<'a> StreamBus for RedisClient {
                 match stream_option {
                     Some(reply) => {
                         for key in reply.keys {
-                            for id in key.ids {
-                                let value = id.map.get("value").unwrap(); // TODO:: Error handling + test
-                                match value {
-                                    Value::Data(val) => {
-                    
-                                        let stream = Stream {
-                                            id: Some(id.id),
-                                            key: key.key.clone(),
-                                            value: decode_value(value),
-                                        };
-                                        println!("[+] Got event {:?}",stream);
-                                        read_tx.send(stream).await.unwrap();
-                                    }
-                                    _ => {
-                                        warn!("unimplmented Deserilization {:?}",value);
-                                        // TODO
-                                    }
-                                }
+                            for stream_id in key.ids {
+                                let stream = Stream {
+                                    id: Some(stream_id.id),
+                                    key: key.key.clone(),
+                                    value: stream_id.map.into(),
+                                };
+                                println!("[+] Got event {:?}",stream);
+                                read_tx.send(stream).await.unwrap();
                             }
                         }
                     }
@@ -161,7 +151,7 @@ impl<'a> StreamBus for RedisClient {
 }
 
 
-fn decode_value(v:&Value) -> StreamValue{
-    let map:HashMap<String,String>=redis::from_redis_value(v).unwrap();
-    map.into()
-}
+// fn decode_value(v:&Value) -> StreamValue{
+//     let map:HashMap<String,String>=redis::from_redis_value(v).unwrap();
+//     map.into()
+// }
