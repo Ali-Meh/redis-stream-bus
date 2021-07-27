@@ -6,7 +6,7 @@ pub use super::bus::{Stream, StreamBus, StreamID, StreamKey};
 use log::*;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::{AsyncCommands, Commands, RedisResult, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::usize;
 use tokio::sync::mpsc::Receiver;
 
@@ -91,10 +91,10 @@ impl<'a> StreamBus for RedisClient {
     }
 
     fn add(&mut self, stream: &Stream) -> Result<StreamID> {
-        let json = serde_json::to_string(&stream.value).unwrap();
+        // let json = serde_json::to_string(&stream.value).unwrap();
         let id: String = self
             .connection
-            .xadd(stream.key.clone(), "*", &[("value", json)])?;
+            .xadd_map::<_,_,BTreeMap<String,String>,_>(stream.key.clone(), "*", stream.value.clone().into())?;
 
         debug!("Stream added: {:?}", stream);
         Ok(id)
