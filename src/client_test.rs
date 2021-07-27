@@ -15,7 +15,7 @@ mod tests {
             .with_consumer_name("consumer_1")
             .with_group_name("group_1");
 
-        let mut read_rx = client.read(&vec!["key_1", "key_2"]).unwrap();
+        let mut read_rx = client.read(&vec!["key_1".to_string(), "key_2".to_string()]).unwrap();
 
         let msg1 = Stream {
             id: None,

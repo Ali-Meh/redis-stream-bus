@@ -1,7 +1,8 @@
+use crate::bus::StreamValue;
+
 use super::config::Config;
 pub use super::error::{Error, Result};
 pub use super::bus::{Stream, StreamBus, StreamID, StreamKey};
-use async_scoped;
 use log::*;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::{AsyncCommands, Commands, RedisResult, Value};
@@ -88,27 +89,31 @@ impl<'a> StreamBus for RedisClient {
         Ok(id)
     }
 
-    fn read(&mut self, keys: &Vec<&str>) -> Result<Receiver<Stream>> {
+    fn read(&mut self, keys: &Vec<String>) -> Result<Receiver<Stream>> {
         let (read_tx, read_rx) = tokio::sync::mpsc::channel(100);
         let opts =
-            StreamReadOptions::default().group(self.group_name.clone(), self.consumer_name.clone());
-
-        async_scoped::AsyncScope::scope_and_block(|s| {
-            let proc = || async {
-                let mut con = self.client.get_async_connection().await.unwrap();
-                let mut ids = vec![];
-                for k in keys {
-                    let created: RedisResult<()> =
-                        con.xgroup_create_mkstream(k, &self.group_name, "$").await;
-                    if let Err(e) = created {
-                        debug!("Group already exists: {:?} \n", e);
-                    }
-                    ids.push(">");
+            StreamReadOptions::default()
+            .group(self.group_name.clone(), self.consumer_name.clone())
+            .block(self.timeout)
+            .count(self.count);
+            
+            let mut con = self.client.get_connection()?;
+            let mut ids = vec![];
+            for k in keys {
+                let created: RedisResult<()> =
+                    con.xgroup_create_mkstream(k, &self.group_name, "$");
+                if let Err(e) = created {
+                    println!("Group already exists: {:?} \n", e);
                 }
+                ids.push(">");
+            }
+        let keyss=keys.to_owned();
 
+        tokio::spawn(async move {
+            loop{
                 let stream_option: Option<StreamReadReply> =
-                    con.xread_options(&keys, &ids, &opts).await.unwrap(); // TODO: error handling
-
+                con.xread_options(&keyss, &ids, &opts).unwrap(); // TODO: error handling
+                
                 match stream_option {
                     Some(reply) => {
                         for key in reply.keys {
@@ -116,15 +121,17 @@ impl<'a> StreamBus for RedisClient {
                                 let value = id.map.get("value").unwrap(); // TODO:: Error handling + test
                                 match value {
                                     Value::Data(val) => {
+                    
                                         let stream = Stream {
                                             id: Some(id.id),
                                             key: key.key.clone(),
                                             value: serde_json::from_slice(&val.to_vec()).unwrap(),
                                         };
-
+                                        println!("[+] Got event {:?}",stream);
                                         read_tx.send(stream).await.unwrap();
                                     }
                                     _ => {
+                                        warn!("unimplmented Deserilization");
                                         // TODO
                                     }
                                 }
@@ -135,8 +142,7 @@ impl<'a> StreamBus for RedisClient {
                         debug!("Stream option is empty");
                     }
                 }
-            };
-            s.spawn(proc());
+            }
         });
 
         Ok(read_rx)

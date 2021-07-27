@@ -26,9 +26,9 @@ pub struct Stream {
     pub key: StreamKey,
     pub value: StreamValue,
 }
-// #[cfg_attr(test, automock)] TODO: how to mock??
+#[cfg_attr(test, automock)]
 pub trait StreamBus: Sync + Send + 'static {
     fn ack(&mut self, stream: &Stream) -> Result<()>;
     fn add(&mut self, stream: &Stream) -> Result<StreamID>;
-    fn read(&mut self, keys: &Vec<&str>) -> Result<Receiver<Stream>>;
+    fn read(&mut self, keys: &Vec<String>) -> Result<Receiver<Stream>>;
 }

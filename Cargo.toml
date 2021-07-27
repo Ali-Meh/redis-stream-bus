@@ -17,7 +17,6 @@ mockall = "0.10"
 log = "0.4"
 serde_json = "1.0"
 tokio-stream = "0.1"
-async-scoped = { version = "0.7.0", features = ["use-async-std"] }
 
 [dev-dependencies]
 simple_logger = "1.11.0"
