@@ -35,7 +35,6 @@ pub trait StreamBus: Sync + Send + 'static {
     fn read(&mut self, keys: &Vec<String>) -> Result<Receiver<Stream>>;
 }
 
-
 impl From<StreamValue> for BTreeMap<String, String> {
     fn from(event: StreamValue) -> Self {
         let mut map: BTreeMap<String, String> = BTreeMap::new();
@@ -67,7 +66,6 @@ impl From<HashMap<String, redis::Value>> for StreamValue {
         }
     }
 }
-
 
 pub fn parse_to_string(from: Option<&redis::Value>) -> String {
     if let Some(v) = from {

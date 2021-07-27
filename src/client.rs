@@ -1,12 +1,10 @@
-use crate::bus::StreamValue;
-
+pub use super::bus::{Stream, StreamBus, StreamID, StreamKey};
 use super::config::Config;
 pub use super::error::{Error, Result};
-pub use super::bus::{Stream, StreamBus, StreamID, StreamKey};
 use log::*;
 use redis::streams::{StreamReadOptions, StreamReadReply};
-use redis::{Commands, RedisResult, Value};
-use std::collections::{BTreeMap, HashMap};
+use redis::{Commands, RedisResult};
+use std::collections::{BTreeMap};
 use std::usize;
 use tokio::sync::mpsc::Receiver;
 
@@ -52,7 +50,7 @@ impl RedisClient {
         self.timeout = timeout;
         self
     }
-    
+
     pub fn with_count(mut self, count: usize) -> Self {
         self.count = count;
         self
@@ -91,10 +89,13 @@ impl<'a> StreamBus for RedisClient {
     }
 
     fn add(&mut self, stream: &Stream) -> Result<StreamID> {
-        // let json = serde_json::to_string(&stream.value).unwrap();
         let id: String = self
             .connection
-            .xadd_map::<_,_,BTreeMap<String,String>,_>(stream.key.clone(), "*", stream.value.clone().into())?;
+            .xadd_map::<_, _, BTreeMap<String, String>, _>(
+                stream.key.clone(),
+                "*",
+                stream.value.clone().into(),
+            )?;
 
         debug!("Stream added: {:?}", stream);
         Ok(id)
@@ -102,29 +103,27 @@ impl<'a> StreamBus for RedisClient {
 
     fn read(&mut self, keys: &Vec<String>) -> Result<Receiver<Stream>> {
         let (read_tx, read_rx) = tokio::sync::mpsc::channel(100);
-        let opts =
-            StreamReadOptions::default()
+        let opts = StreamReadOptions::default()
             .group(self.group_name.clone(), self.consumer_name.clone())
             .block(self.timeout)
             .count(self.count);
 
-            let mut con = self.client.get_connection()?;
-            let mut ids = vec![];
-            for k in keys {
-                let created: RedisResult<()> =
-                    con.xgroup_create_mkstream(k, &self.group_name, "$");
-                if let Err(e) = created {
-                    println!("Group already exists: {:?} \n", e);
-                }
-                ids.push(">");
+        let mut con = self.client.get_connection()?;
+        let mut ids = vec![];
+        for k in keys {
+            let created: RedisResult<()> = con.xgroup_create_mkstream(k, &self.group_name, "$");
+            if let Err(e) = created {
+                log::warn!("Group already exists: {:?} \n", e);
             }
-        let keyss=keys.to_owned();
+            ids.push(">");
+        }
+        let keyss = keys.to_owned();
 
         tokio::spawn(async move {
-            loop{
+            loop {
                 let stream_option: Option<StreamReadReply> =
-                con.xread_options(&keyss, &ids, &opts).unwrap(); // TODO: error handling
-                
+                    con.xread_options(&keyss, &ids, &opts).unwrap(); // TODO: error handling
+
                 match stream_option {
                     Some(reply) => {
                         for key in reply.keys {
@@ -134,7 +133,7 @@ impl<'a> StreamBus for RedisClient {
                                     key: key.key.clone(),
                                     value: stream_id.map.into(),
                                 };
-                                println!("[+] Got event {:?}",stream);
+                                log::info!("[+] Got event {:?}", stream);
                                 read_tx.send(stream).await.unwrap();
                             }
                         }
@@ -149,9 +148,3 @@ impl<'a> StreamBus for RedisClient {
         Ok(read_rx)
     }
 }
-
-
-// fn decode_value(v:&Value) -> StreamValue{
-//     let map:HashMap<String,String>=redis::from_redis_value(v).unwrap();
-//     map.into()
-// }
