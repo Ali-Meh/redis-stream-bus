@@ -845,6 +845,9 @@ dependencies = [
 name = "redis-stream-bus"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "futures",
+ "futures-util",
  "log",
  "mockall",
  "redis",
