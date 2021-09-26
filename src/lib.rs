@@ -8,3 +8,9 @@ mod client_test;
 
 #[cfg(test)]
 mod server;
+
+
+
+pub trait StreamParsable : serde::Serialize {
+    fn key(&self)-> String;
+}
