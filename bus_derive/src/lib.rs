@@ -10,12 +10,10 @@ pub fn derive_redis_stream(input: TokenStream) -> TokenStream {
     match stream_name(ast.clone()) {
         Ok(stream_name) => {
             let gen = quote! {
-                use redis_stream_bus::StreamParsable;
-
                 impl #ident {
                     pub const name: &'static str = #stream_name;
                 }
-                impl StreamParsable for #ident{
+                impl redis_stream_bus::StreamParsable for #ident{
                     fn key(&self)-> String {
                         #stream_name.to_string()
                     }

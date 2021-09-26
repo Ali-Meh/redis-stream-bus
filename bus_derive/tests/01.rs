@@ -1,5 +1,6 @@
 use serde::Serialize;
-use procedural::*;
+use redis_stream_bus::StreamParsable;
+use bus_derive::*;
 
 
 #[derive(Serialize, Debug, Clone, RedisStream)]
@@ -8,14 +9,4 @@ pub struct Drafted {
     pub id: String,
 }
 
-
-
-fn main(){
-    let drafted=Drafted{
-        id:"".to_string()
-    };
-
-    println!("{}",drafted.key());
-
-    let _=drafted;
-}
+fn main() {}
