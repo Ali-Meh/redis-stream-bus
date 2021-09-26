@@ -1,0 +1,6 @@
+error[E0277]: the trait bound `TestStruct: serde::ser::Serialize` is not satisfied
+  --> $DIR/unparsable.rs:3:24
+   |
+3  | #[derive(Debug, Clone, RedisStream)]
+   |                        ^^^^^^^^^^^ the trait `serde::ser::Serialize` is not implemented for `TestStruct`
+   |
