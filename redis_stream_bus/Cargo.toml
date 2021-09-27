@@ -33,4 +33,4 @@ default = []
 
 #[derive(Serialize, RedisStream)]
 #[stream_name("p2p:adv:drafted")]
-# derive = ["bus_derive"]
+derive = ["bus_derive"]
