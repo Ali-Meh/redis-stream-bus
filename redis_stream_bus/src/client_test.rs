@@ -1,24 +1,88 @@
 #[cfg(test)]
 mod tests {
     use crate::bus;
-    use crate::bus::StreamBus;
+    use crate::bus::{StreamBus, Stream, Message};
     use crate::client::RedisClient;
     use futures::channel::mpsc::channel;
     use futures::select;
     use futures::{SinkExt, StreamExt};
+    use serde::{Deserialize,Serialize};
     use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::task::{self};
 
     const REDIS_CON: &str = "redis://localhost:6379";
 
-    #[test]
-    fn test_new_stream() {
-        let stream = bus::Stream::new("key", "module", None, "message");
+    #[derive(Serialize, Deserialize, Debug, Clone, Default)]
+    pub struct Drafted {
+        pub id: String,
+    }
 
+    impl Drafted{
+        fn new(id:&str)->Self{
+            Drafted { id: id.to_string() }
+        }
+    }
+
+
+
+    #[test]
+    fn test_basic_message() {
+        let payload=Drafted{
+            id:"payload_id".to_string()
+        };
+        let stream = bus::Stream{
+            id: Some("id".to_string()),
+            key: "key".to_string(),
+            message: bus::Message{
+                fields: serde_json::to_value(payload.clone()).unwrap(),
+            },
+        };
+
+        assert_eq!(stream.id, Some("id".to_string()));
         assert_eq!(stream.key, "key");
-        assert_eq!(stream.value.request_id, None);
-        assert_eq!(stream.value.module, "module");
-        assert_eq!(stream.value.message, "\"message\"");
+        let drafted:Drafted=serde_json::from_value(stream.message.fields).unwrap();
+        assert_eq!(drafted.id, payload.id);
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct Event {
+        #[serde(flatten)]
+        pub header: EventHeader,
+        pub payload: EventPayload,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct EventHeader {
+        pub wss_id: String,
+        pub ws_id: String,
+    }
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct EventPayload {
+        pub payload:String
+    }
+
+
+    #[test]
+    fn test_headered_message() {
+        let payload=Event{
+            header: EventHeader{ wss_id: "wss_id".to_string(), ws_id: "ws_id".to_string() },
+            payload: EventPayload{ payload: "Hello There".to_string() },
+        };
+        let stream = Stream{
+            id: Some("id".to_string()),
+            key: "key".to_string(),
+            message: Message{
+                fields: serde_json::to_value(payload.clone()).unwrap(),
+            },
+        };
+
+        assert_eq!(stream.id, Some("id".to_string()));
+        assert_eq!(stream.key, "key");
+        let drafted:Event=serde_json::from_value(stream.message.fields.clone()).unwrap();
+        eprintln!("{}",serde_json::json!(stream.message.fields));
+        assert_eq!(drafted.header.ws_id, payload.header.ws_id);
+        assert_eq!(drafted.header.wss_id, payload.header.wss_id);
+        assert_eq!(drafted.payload.payload, payload.payload.payload);
     }
 
     #[tokio::test]
@@ -32,7 +96,13 @@ mod tests {
             client.run(&["key_read_id"], read_tx).await;
         });
 
-        let mut stream_out = bus::Stream::new("key_read_id", "module_1", None, "message_1");
+        let mut stream_out = bus::Stream{
+            id: None,
+            key: "key_read_id".to_string(),
+            message: Message{
+                fields:serde_json::to_value(Drafted::default()).unwrap(),
+            },
+        };
 
         let start = SystemTime::now();
         let since_the_epoch = start
@@ -59,13 +129,13 @@ mod tests {
             client.run(&["key_read_one_group"], read_tx).await;
         });
 
-        let stream_1 = bus::Stream::new("key_read_one_group", "module_1", None, "message");
+        let stream_1 = bus::Stream::new("key_read_one_group",serde_json::to_value(Drafted::default()).unwrap());
 
         add_tx.send(stream_1.clone()).await.unwrap();
 
         let stream_in = read_rx.next().await.unwrap();
 
-        assert_eq!(stream_in.value.message, stream_1.value.message);
+        assert_eq!(stream_in.message, stream_1.message);
         assert_eq!(stream_in.key, stream_1.key);
     }
 
@@ -86,9 +156,9 @@ mod tests {
             client_2.run(&["foo", "bar"], read_tx_2).await;
         });
 
-        let stream_1 = bus::Stream::new("zoo", "module_1", None, "message_1");
-        let stream_2 = bus::Stream::new("foo", "module_2", None, "message_2");
-        let stream_3 = bus::Stream::new("bar", "module_3", None, "message_3");
+        let stream_1 = bus::Stream::new("zoo", serde_json::to_value(Drafted::default()).unwrap());
+        let stream_2 = bus::Stream::new("foo", serde_json::to_value(Drafted::default()).unwrap());
+        let stream_3 = bus::Stream::new("bar", serde_json::to_value(Drafted::default()).unwrap());
 
         add_tx_1.send(stream_1.clone()).await.unwrap();
         add_tx_1.send(stream_2.clone()).await.unwrap();
@@ -121,10 +191,10 @@ mod tests {
         });
 
         let streams = [
-            bus::Stream::new("key_2_consumers", "module_1", None, "message_1"),
-            bus::Stream::new("key_2_consumers", "module_2", None, "message_2"),
-            bus::Stream::new("key_2_consumers", "module_3", None, "message_3"),
-            bus::Stream::new("key_2_consumers", "module_4", None, "message_4"),
+            bus::Stream::new("key_2_consumers", serde_json::to_value(Drafted::new("1")).unwrap()),
+            bus::Stream::new("key_2_consumers", serde_json::to_value(Drafted::new("2")).unwrap()),
+            bus::Stream::new("key_2_consumers", serde_json::to_value(Drafted::new("3")).unwrap()),
+            bus::Stream::new("key_2_consumers", serde_json::to_value(Drafted::new("4")).unwrap()),
         ];
 
         add_tx_1.send(streams[0].clone()).await.unwrap();
@@ -132,23 +202,23 @@ mod tests {
         add_tx_1.send(streams[2].clone()).await.unwrap();
         add_tx_1.send(streams[3].clone()).await.unwrap();
 
-        let mut modules = Vec::new();
+        let mut id = Vec::new();
 
         for _ in 0..4 {
             select! {
                 read_option = read_rx_1.next() => if let Some(stream) = read_option {
-                    modules.push(stream.value.module)
+                    id.push(serde_json::from_value::<Drafted>(stream.message.fields).unwrap().id)
                 },
                 read_option = read_rx_2.next() => if let Some(stream) = read_option {
-                    modules.push(stream.value.module)
+                    id.push(serde_json::from_value::<Drafted>(stream.message.fields).unwrap().id)
                 },
             }
         }
 
-        assert!(modules.contains(&"module_1".to_owned()));
-        assert!(modules.contains(&"module_2".to_owned()));
-        assert!(modules.contains(&"module_3".to_owned()));
-        assert!(modules.contains(&"module_4".to_owned()));
+        assert!(id.contains(&"1".to_owned()));
+        assert!(id.contains(&"2".to_owned()));
+        assert!(id.contains(&"3".to_owned()));
+        assert!(id.contains(&"4".to_owned()));
     }
 
     #[tokio::test]
@@ -163,9 +233,9 @@ mod tests {
             client_1.run(&["key_ack"], read_tx_1).await;
         });
 
-        let stream_1 = bus::Stream::new("key_ack", "module_1", None, "message_1");
+        let stream_1 = bus::Stream::new("key_ack", serde_json::to_value(Drafted::new("1")).unwrap());
 
-        let stream_2 = bus::Stream::new("key_ack", "module_1", None, "message_2");
+        let stream_2 = bus::Stream::new("key_ack", serde_json::to_value(Drafted::new("2")).unwrap());
 
         add_tx.send(stream_1.clone()).await.unwrap();
         let stream_1 = read_rx_1.next().await.unwrap();

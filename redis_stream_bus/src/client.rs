@@ -130,9 +130,9 @@ impl StreamBus for RedisClient {
                                     let stream = Stream {
                                         id: Some(stream_id.id),
                                         key: stream_key.key.clone(),
-                                        value: stream_id.map.into(),
+                                        message: stream_id.map.into(),
                                     };
-                                   trace!("[>][{}]: {:?}", &stream.key, &stream.value);
+                                   trace!("[>][{}]: {:?}", &stream.key, &stream.message);
                                    if let Err(err) = read_tx.send(stream).await {
                                         error!("[!]: {:?}", err);
                                         break;
@@ -155,7 +155,7 @@ impl StreamBus for RedisClient {
                     match con_add.xadd_map::<_, _, BTreeMap<String, String>, String>(
                         stream.key.clone(),
                         stream_id,
-                        stream.value.into(),  // TODO: no clone here.
+                        stream.message.into(),  // TODO: no clone here.
                     ).await {
                         Ok(id) => {
                             trace!("[<][{}]: {}", &stream.key, &id);
