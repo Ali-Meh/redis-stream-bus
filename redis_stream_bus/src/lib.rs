@@ -12,17 +12,14 @@ mod client_test;
 // mod server;
 
 
-pub use internals::StreamParsable;
+pub use internals::*;
 
 
 
 
 
-// Re-export #[derive(Serialize, Deserialize)].
+// Re-export #[derive(Serialize, RedisStream)].
 //
-// The reason re-exporting is not enabled by default is that disabling it would
-// be annoying for crates that provide handwritten impls or data formats. They
-// would need to disable default features and then explicitly re-enable std.
 #[cfg(feature = "bus_derive")]
 #[allow(unused_imports)]
 #[macro_use]

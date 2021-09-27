@@ -13,7 +13,7 @@ pub fn derive_redis_stream(input: TokenStream) -> TokenStream {
                 impl #ident {
                     pub const name: &'static str = #stream_name;
                 }
-                impl internals::StreamParsable for #ident{
+                impl StreamParsable for #ident{
                     fn key(&self)-> String {
                         #stream_name.to_string()
                     }
