@@ -2,4 +2,5 @@
 members = [
     "redis_stream_bus",
     "bus_derive",
+    "internals",
 ]

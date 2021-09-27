@@ -10,7 +10,4 @@ mod client_test;
 mod server;
 
 
-
-pub trait StreamParsable : serde::Serialize {
-    fn key(&self)-> String;
-}
+pub use internals::StreamParsable;
