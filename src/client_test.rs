@@ -51,7 +51,7 @@ mod tests {
         let stream_in = read_rx.next().await.unwrap();
         // TODO: This is not good
         let mut vec = Vec::new();
-        for (k, v) in stream_in.message {
+        for (k, v) in stream_in.fields {
             vec.push(redis::Value::Data(k.as_bytes().to_vec()));
             vec.push(v);
         }
@@ -75,13 +75,13 @@ mod tests {
     //         client.run(&["key_read_one_group"], read_tx).await;
     //     });
 
-    //     let stream_1 = Stream::new("key_read_one_group", None, "message");
+    //     let stream_1 = Stream::new("key_read_one_group", None, "fields");
 
     //     add_tx.send(stream_1.clone()).await.unwrap();
 
     //     let stream_in = read_rx.next().await.unwrap();
 
-    //     assert_eq!(stream_in.value.message, stream_1.value.message);
+    //     assert_eq!(stream_in.value.fields, stream_1.value.fields);
     //     assert_eq!(stream_in.key, stream_1.key);
     // }
 
@@ -102,9 +102,9 @@ mod tests {
     //         client_2.run(&["foo", "bar"], read_tx_2).await;
     //     });
 
-    //     let stream_1 = Stream::new("zoo", None, "message_1");
-    //     let stream_2 = Stream::new("foo", None, "message_2");
-    //     let stream_3 = Stream::new("bar", None, "message_3");
+    //     let stream_1 = Stream::new("zoo", None, "fields_1");
+    //     let stream_2 = Stream::new("foo", None, "fields_2");
+    //     let stream_3 = Stream::new("bar", None, "fields_3");
 
     //     add_tx_1.send(stream_1.clone()).await.unwrap();
     //     add_tx_1.send(stream_2.clone()).await.unwrap();
@@ -137,10 +137,10 @@ mod tests {
     //     });
 
     //     let streams = [
-    //         Stream::new("key_2_consumers", None, "message_1"),
-    //         Stream::new("key_2_consumers", None, "message_2"),
-    //         Stream::new("key_2_consumers", None, "message_3"),
-    //         Stream::new("key_2_consumers", None, "message_4"),
+    //         Stream::new("key_2_consumers", None, "fields_1"),
+    //         Stream::new("key_2_consumers", None, "fields_2"),
+    //         Stream::new("key_2_consumers", None, "fields_3"),
+    //         Stream::new("key_2_consumers", None, "fields_4"),
     //     ];
 
     //     add_tx_1.send(streams[0].clone()).await.unwrap();
@@ -179,8 +179,8 @@ mod tests {
     //         client_1.run(&["key_ack"], read_tx_1).await;
     //     });
 
-    //     let stream_1 = Stream::new("key_ack", None, "message_1");
-    //     let stream_2 = Stream::new("key_ack", None, "message_2");
+    //     let stream_1 = Stream::new("key_ack", None, "fields_1");
+    //     let stream_2 = Stream::new("key_ack", None, "fields_2");
 
     //     add_tx.send(stream_1.clone()).await.unwrap();
     //     let stream_1 = read_rx_1.next().await.unwrap();

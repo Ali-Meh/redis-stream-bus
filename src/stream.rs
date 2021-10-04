@@ -9,19 +9,19 @@ pub struct Stream {
     /// redis stream this streams belongs to
     pub key: String,
     /// data embedded in the event
-    pub message: HashMap<String, redis::Value>,
+    pub fields: HashMap<String, redis::Value>,
 }
 
 impl Stream {
     pub fn new(
         key: &str,
         id: Option<String>,
-        message: HashMap<String, redis::Value>,
+        fields: HashMap<String, redis::Value>,
     ) -> Self {
         Stream {
-            id: id,
+            id,
             key: key.to_owned(),
-            message: message,
+            fields,
         }
     }
 }

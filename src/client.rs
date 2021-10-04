@@ -149,7 +149,7 @@ impl StreamBus for RedisClient {
                     };
 
                     let mut map = BTreeMap::new();
-                    for (k, v) in stream.message {
+                    for (k, v) in stream.fields {
                         match v {
                             redis::Value::Data(d) => {
                                 map.insert(k, d);
