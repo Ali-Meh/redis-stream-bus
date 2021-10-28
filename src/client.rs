@@ -7,6 +7,7 @@ use futures::{select, SinkExt};
 use futures_util::StreamExt;
 #[cfg(not(test))]
 use log::{error, info, trace, warn};
+use redis::aio::ConnectionManager;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::{AsyncCommands, RedisResult};
 use std::collections::BTreeMap;
@@ -83,30 +84,16 @@ impl StreamBus for RedisClient {
     }
 
     async fn run<'a>(mut self, keys: &[&'a str], mut read_tx: Sender<Stream>) {
-        let mut con_read = self.client.get_tokio_connection().await.unwrap();
-        let mut con_add = self.client.get_tokio_connection().await.unwrap();
-        let mut con_ack = self.client.get_tokio_connection().await.unwrap();
+        let mut con_read = self.client.get_tokio_connection_manager().await.unwrap();
+        let mut con_add = self.client.get_tokio_connection_manager().await.unwrap();
+        let mut con_ack = self.client.get_tokio_connection_manager().await.unwrap();
 
         let opts = StreamReadOptions::default()
             .group(self.group_name.clone(), self.consumer_name.clone())
             .block(self.timeout)
             .count(self.count);
 
-        let mut ids = vec![];
-        for k in keys {
-            let created: RedisResult<()> = con_read
-                .xgroup_create_mkstream(k, &self.group_name, "$")
-                .await;
-
-            match created {
-                Ok(_) => trace!("Group created successfully: {}", self.group_name),
-                Err(err) => warn!(
-                    "An error occurred when creating a group {:?}: {:?}",
-                    self.group_name, err
-                ),
-            }
-            ids.push(">");
-        }
+        let ids = register_running(&self.group_name, keys, &mut con_read.clone()).await;
 
         info!("Started listening on events. on keys: {:?}", keys);
 
@@ -137,7 +124,13 @@ impl StreamBus for RedisClient {
                             }
                         },
                         Err (err) => {
-                            error!("[!]: {}", err);
+                            error!("[!]: {:?}", err);
+                            if let Some("NOGROUP") = err.code() {
+                                //re-register redis keys
+                                let conn=&mut self.client.get_tokio_connection_manager().await.unwrap();
+                                register_running(&self.group_name, keys, conn).await;
+                                continue;
+                            }
                             break;
                         }
                     }
@@ -188,4 +181,25 @@ impl StreamBus for RedisClient {
             }
         }
     }
+}
+
+async fn register_running<'a>(
+    group_name: &str,
+    keys: &[&'a str],
+    con_read: &mut ConnectionManager,
+) -> Vec<&'a str> {
+    let mut ids = vec![];
+    for k in keys {
+        let created: RedisResult<()> = con_read.xgroup_create_mkstream(k, group_name, "$").await;
+
+        match created {
+            Ok(_) => trace!("Group created successfully: {}", group_name),
+            Err(err) => warn!(
+                "An error occurred when creating a group {:?}: {:?}",
+                group_name, err
+            ),
+        }
+        ids.push(">");
+    }
+    return ids;
 }

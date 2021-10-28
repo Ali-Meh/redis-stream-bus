@@ -4,15 +4,10 @@ mod tests {
     use crate::client::RedisClient;
     use crate::stream::Stream;
     use futures::channel::mpsc::channel;
-    use futures::select;
     use futures::{SinkExt, StreamExt};
-    use std::array::IntoIter;
-    use std::collections::HashMap;
-    use std::iter::FromIterator;
+    use serde::{Deserialize, Serialize};
     use std::time::{SystemTime, UNIX_EPOCH};
-    use tokio::task::{self};
-    use serde::{Serialize, Deserialize};
-    use serde_redis::Serializer;
+    use tokio::task;
 
     const REDIS_CON: &str = "redis://localhost:6379";
 
@@ -58,7 +53,7 @@ mod tests {
 
         let data = &redis::Value::Bulk(vec);
         let de = serde_redis::Deserializer::new(data);
-        let received : Foo = Deserialize::deserialize(de).unwrap();
+        let received: Foo = Deserialize::deserialize(de).unwrap();
 
         assert_eq!(send, received);
         assert_eq!(stream_in.id, stream_out.id);
@@ -75,13 +70,16 @@ mod tests {
     //         client.run(&["key_read_one_group"], read_tx).await;
     //     });
 
-    //     let stream_1 = Stream::new("key_read_one_group", None, "fields");
+    //     let mut fields = HashMap::new();
+    //     fields.insert("hi".to_string(), Value::Int(10));
+
+    //     let stream_1 = Stream::new("key_read_one_group", None, fields.clone());
 
     //     add_tx.send(stream_1.clone()).await.unwrap();
 
     //     let stream_in = read_rx.next().await.unwrap();
 
-    //     assert_eq!(stream_in.value.fields, stream_1.value.fields);
+    //     assert_eq!(stream_in.fields, fields);
     //     assert_eq!(stream_in.key, stream_1.key);
     // }
 

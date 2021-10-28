@@ -1,4 +1,4 @@
-pub use crate::{stream::Stream, bus::StreamBus};
+pub use crate::{bus::StreamBus, stream::Stream};
 use async_trait::async_trait;
 use futures::channel::mpsc::{channel, Receiver, Sender};
 use futures::{select, SinkExt};
