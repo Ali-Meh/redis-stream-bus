@@ -7,7 +7,7 @@ use futures::{select, SinkExt};
 use futures_util::StreamExt;
 #[cfg(not(test))]
 use log::{error, info, trace, warn};
-use redis::aio::ConnectionManager;
+use redis::aio::Connection;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::{AsyncCommands, RedisResult};
 use std::collections::BTreeMap;
@@ -84,16 +84,16 @@ impl StreamBus for RedisClient {
     }
 
     async fn run<'a>(mut self, keys: &[&'a str], mut read_tx: Sender<Stream>) {
-        let mut con_read = self.client.get_tokio_connection_manager().await.unwrap();
-        let mut con_add = self.client.get_tokio_connection_manager().await.unwrap();
-        let mut con_ack = self.client.get_tokio_connection_manager().await.unwrap();
+        let mut con_read = self.client.get_tokio_connection().await.unwrap();
+        let mut con_add = self.client.get_tokio_connection().await.unwrap();
+        let mut con_ack = self.client.get_tokio_connection().await.unwrap();
 
         let opts = StreamReadOptions::default()
-            .group(self.group_name.clone(), self.consumer_name.clone())
+            .group(&self.group_name, &self.consumer_name)
             .block(self.timeout)
             .count(self.count);
 
-        let ids = register_running(&self.group_name, keys, &mut con_read.clone()).await;
+        let ids = register_running(&self.group_name, keys, &mut con_read).await;
 
         info!("Started listening on events. on keys: {:?}", keys);
 
@@ -127,7 +127,7 @@ impl StreamBus for RedisClient {
                             error!("[!]: {:?}", err);
                             if let Some("NOGROUP") = err.code() {
                                 //re-register redis keys
-                                let conn=&mut self.client.get_tokio_connection_manager().await.unwrap();
+                                let conn=&mut self.client.get_tokio_connection().await.unwrap();
                                 register_running(&self.group_name, keys, conn).await;
                                 continue;
                             }
@@ -135,32 +135,35 @@ impl StreamBus for RedisClient {
                         }
                     }
                 },
-                add_option = self.add_ch.1.next() => if let Some(stream) = add_option {
-                    let stream_id = match stream.id {
-                        Some(id) => id,
-                        None => "*".to_owned(),
-                    };
+                add_option = self.add_ch.1.next() => {
+                    trace!("[<tring>][{:?}]", add_option);
+                    if let Some(stream) = add_option {
+                        let stream_id = match stream.id {
+                            Some(id) => id,
+                            None => "*".to_owned(),
+                        };
 
-                    let mut map = BTreeMap::new();
-                    for (k, v) in stream.fields {
-                        match v {
-                            redis::Value::Data(d) => {
-                                map.insert(k, d);
+                        let mut map = BTreeMap::new();
+                        for (k, v) in stream.fields {
+                            match v {
+                                redis::Value::Data(d) => {
+                                    map.insert(k, d);
+                                }
+                                _ => {}
                             }
-                            _ => {}
                         }
-                    }
-                    match con_add.xadd_map::<_, _, BTreeMap<String, Vec<u8>>, String>(
-                        stream.key.clone(),
-                        stream_id,
-                        map,
-                    ).await {
-                        Ok(id) => {
-                            trace!("[<][{}]: {}", &stream.key, &id);
-                        }
-                        Err(e)=> {
-                            error!("[!][{}]: {}", &stream.key, e);
-                            break;
+                        match con_add.xadd_map::<_, _, BTreeMap<String, Vec<u8>>, String>(
+                            stream.key.clone(),
+                            stream_id,
+                            map,
+                        ).await {
+                            Ok(id) => {
+                                trace!("[<][{}]: {}", &stream.key, &id);
+                            }
+                            Err(e)=> {
+                                error!("[!][{}]: {}", &stream.key, e);
+                                break;
+                            }
                         }
                     }
                 },
@@ -186,7 +189,7 @@ impl StreamBus for RedisClient {
 async fn register_running<'a>(
     group_name: &str,
     keys: &[&'a str],
-    con_read: &mut ConnectionManager,
+    con_read: &mut Connection,
 ) -> Vec<&'a str> {
     let mut ids = vec![];
     for k in keys {
