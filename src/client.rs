@@ -124,14 +124,31 @@ impl StreamBus for RedisClient {
                             }
                         },
                         Err (err) => {
-                            error!("[!]: {:?}", err);
-                            if let Some("NOGROUP") = err.code() {
-                                //re-register redis keys
-                                let conn=&mut self.client.get_tokio_connection().await.unwrap();
-                                register_running(&self.group_name, keys, conn).await;
-                                continue;
+                            error!("[!]: {:?} , CODE:'{:?}'", err,err.code());
+                            match err.code() {
+                                Some("NOGROUP") => {
+                                    //re-register redis keys
+                                    let conn=&mut self.client.get_tokio_connection().await.unwrap();
+                                    register_running(&self.group_name, keys, conn).await;
+                                    continue;
+                                },
+                                Some("None") => {
+                                    // *con_read.borrow_mut() = self.client.get_tokio_connection().await.unwrap();
+                                    con_add = self.client.get_tokio_connection().await.unwrap();
+                                    con_ack = self.client.get_tokio_connection().await.unwrap();
+                                    println!("reconnecting to redis server");
+                                    continue;
+                                },
+                                Some(code) => {
+                                    log::error!("connection dropped due to {:?}",&code);
+                                    break;
+                                },
+                                _ =>  {
+                                    log::error!("connection dropped without any reason");
+                                    break;
+                                },
                             }
-                            break;
+
                         }
                     }
                 },
