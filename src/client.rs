@@ -83,10 +83,14 @@ impl StreamBus for RedisClient {
         self.ack_ch.0.clone()
     }
 
-    async fn run<'a>(mut self, keys: &[&'a str], mut read_tx: Sender<Stream>) {
-        let mut con_read = self.client.get_tokio_connection().await.unwrap();
-        let mut con_add = self.client.get_tokio_connection().await.unwrap();
-        let mut con_ack = self.client.get_tokio_connection().await.unwrap();
+    async fn run<'a, 'b>(
+        &mut self,
+        keys: &[&'a str],
+        read_tx: &'b mut Sender<Stream>,
+    ) -> anyhow::Result<()> {
+        let mut con_read = self.client.get_tokio_connection().await?;
+        let mut con_add = self.client.get_tokio_connection().await?;
+        let mut con_ack = self.client.get_tokio_connection().await?;
 
         let opts = StreamReadOptions::default()
             .group(&self.group_name, &self.consumer_name)
@@ -127,25 +131,23 @@ impl StreamBus for RedisClient {
                             error!("[!]: {:?} , CODE:'{:?}'", err,err.code());
                             match err.code() {
                                 Some("NOGROUP") => {
+                                    log::error!("redis groups not found re-registring them");
                                     //re-register redis keys
-                                    let conn=&mut self.client.get_tokio_connection().await.unwrap();
+                                    let conn=&mut self.client.get_tokio_connection().await?;
                                     register_running(&self.group_name, keys, conn).await;
                                     continue;
                                 },
                                 Some("None") => {
-                                    // *con_read.borrow_mut() = self.client.get_tokio_connection().await.unwrap();
-                                    con_add = self.client.get_tokio_connection().await.unwrap();
-                                    con_ack = self.client.get_tokio_connection().await.unwrap();
-                                    println!("reconnecting to redis server");
-                                    continue;
+                                    log::error!("reconnecting to redis server");
+                                    anyhow::bail!("reconnecting to redis server")
                                 },
                                 Some(code) => {
                                     log::error!("connection dropped due to {:?}",&code);
-                                    break;
+                                    anyhow::bail!("connection dropped due to {:?}",&code)
                                 },
                                 _ =>  {
                                     log::error!("connection dropped without any reason");
-                                    break;
+                                    anyhow::bail!("connection dropped without any reason")
                                 },
                             }
 
@@ -179,7 +181,7 @@ impl StreamBus for RedisClient {
                             }
                             Err(e)=> {
                                 error!("[!][{}]: {}", &stream.key, e);
-                                break;
+                                anyhow::bail!("[!][{}]: {}", &stream.key, e)
                             }
                         }
                     }
@@ -194,7 +196,7 @@ impl StreamBus for RedisClient {
                         }
                         None => {
                             error!("[!][{}]: Stream ID is not set for the acknowledgment: {:?}", &stream.key, stream);
-                            break;
+                            anyhow::bail!("[!][{}]: Stream ID is not set for the acknowledgment: {:?}", &stream.key, stream)
                         }
                     }
                 },

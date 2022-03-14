@@ -6,5 +6,9 @@ use futures::channel::mpsc::Sender;
 pub trait StreamBus {
     fn xadd_sender(&self) -> Sender<Stream>;
     fn xack_sender(&self) -> Sender<Stream>;
-    async fn run<'a>(mut self, keys: &[&'a str], mut read_tx: Sender<Stream>);
+    async fn run<'a, 'b>(
+        &mut self,
+        keys: &[&'a str],
+        read_tx: &'b mut Sender<Stream>,
+    ) -> anyhow::Result<()>;
 }

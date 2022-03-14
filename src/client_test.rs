@@ -16,10 +16,10 @@ mod tests {
         let client = RedisClient::new(REDIS_CON, "group_1", "consumer_1").unwrap();
 
         let mut add_tx = client.xadd_sender();
-        let (read_tx, mut read_rx) = channel(100);
+        let (mut read_tx, mut read_rx) = channel(100);
 
         task::spawn(async move {
-            client.run(&["key_read_id"], read_tx).await;
+            client.run(&["key_read_id"], &mut read_tx).await;
         });
 
         #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]

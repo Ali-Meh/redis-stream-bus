@@ -29,7 +29,11 @@ impl StreamBus for MockRedisClient {
         self.ack_ch.0.clone()
     }
 
-    async fn run<'a>(mut self, keys: &[&'a str], mut read_tx: Sender<Stream>) {
+    async fn run<'a, 'b>(
+        &mut self,
+        keys: &[&'a str],
+        read_tx: &'b mut Sender<Stream>,
+    ) -> anyhow::Result<()> {
         let mut streams: HashMap<String, Stream> = HashMap::new();
         loop {
             select! {
